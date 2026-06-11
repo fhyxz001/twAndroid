@@ -59,7 +59,7 @@ fun WaterfallScreen(
     if (vm.showSettings) {
         SettingsSheet(
             config = vm.config,
-            onDismiss = { vm.setShowSettings(false) },
+            onDismiss = { vm.updateShowSettings(false) },
             onSave = { vm.saveConfig(it) },
         )
     }
@@ -119,7 +119,7 @@ fun WaterfallScreen(
                     )
                     NavButton(
                         icon = { Icon(Icons.Filled.Settings, "设置", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
-                        onClick = { vm.setShowSettings(true) },
+                        onClick = { vm.updateShowSettings(true) },
                     )
                     NavButton(
                         icon = { Icon(Icons.Filled.Refresh, "刷新", tint = TextSecondary, modifier = Modifier.size(22.dp)) },

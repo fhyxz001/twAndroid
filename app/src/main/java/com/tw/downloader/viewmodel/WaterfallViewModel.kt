@@ -73,7 +73,7 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
         repo.refreshApi()
     }
 
-    fun setShowSettings(show: Boolean) {
+    fun updateShowSettings(show: Boolean) {
         showSettings = show
     }
 
