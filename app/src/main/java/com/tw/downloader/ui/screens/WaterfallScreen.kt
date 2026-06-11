@@ -1,6 +1,7 @@
 package com.tw.downloader.ui.screens
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -106,6 +108,10 @@ fun WaterfallScreen(
                             )
                         },
                         onClick = { vm.toggleSelectMode() },
+                    )
+                    NavButton(
+                        icon = { Icon(Icons.Outlined.VpnKey, "代理", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
+                        onClick = onNavigateToProxy,
                     )
                     NavButton(
                         icon = { Icon(Icons.Outlined.Folder, "文件", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
@@ -258,9 +264,9 @@ private fun MediaCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Surface),
-        border = CardDefaults.outlinedCardBorder().copy(
+        border = BorderStroke(
             width = if (selectMode && isSelected) 2.dp else 0.5.dp,
-            brush = androidx.compose.ui.graphics.SolidColor(borderColor),
+            color = borderColor,
         ),
     ) {
         // Poster
