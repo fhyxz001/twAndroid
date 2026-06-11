@@ -151,7 +151,7 @@ fun ProxyScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text("暂无代理方案", fontSize = 15.sp, color = TextSecondary)
-                        Text("点击右上角"添加"创建代理方案", fontSize = 12.sp, color = TextTertiary)
+                        Text("点击右上角「添加」创建代理方案", fontSize = 12.sp, color = TextTertiary)
                     }
                 } else {
                     config.schemes.forEachIndexed { index, scheme ->
