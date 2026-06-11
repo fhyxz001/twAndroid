@@ -10,17 +10,18 @@ data class MediaResponse(
 
 @Serializable
 data class MediaItemRaw(
-    val id: String = "",
+    val id: Long = 0,
+    val url_cd: String = "",
     val url: String = "",
     val thumbnail: String = "",
     val title: String = "",
     val name: String = "",
     val duration: Long = 0,
     val time: Long = 0,
-    val favorite: Long = 0,
-    val favorites: Long = 0,
-    val pv: Long = 0,
-    val views: Long = 0,
+    val favorite: String = "0",
+    val favorites: String = "0",
+    val pv: String = "0",
+    val views: String = "0",
 )
 
 data class MediaItem(
@@ -31,22 +32,27 @@ data class MediaItem(
     val duration: Long,
     val favorite: Long,
     val pv: Long,
+    val fileSize: Long = -1L, // -1 means unknown
 )
 
 fun MediaItemRaw.toMediaItem(): MediaItem? {
-    val id = id.trim()
-    val url = url.trim()
-    if (id.isEmpty() || url.isEmpty()) return null
-    if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+    val idStr = id.toString().trim()
+    val videoUrl = url.trim()
+    if (idStr.isEmpty() || videoUrl.isEmpty()) return null
+    if (!videoUrl.startsWith("http://") && !videoUrl.startsWith("https://")) return null
     val thumb = thumbnail.trim()
+    val pvLong = pv.toLongOrNull() ?: 0L
+    val viewsLong = views.toLongOrNull() ?: 0L
+    val favLong = favorite.toLongOrNull() ?: 0L
+    val favsLong = favorites.toLongOrNull() ?: 0L
     return MediaItem(
-        id = id,
-        url = url,
+        id = idStr,
+        url = videoUrl,
         thumbnail = if (thumb.startsWith("http")) thumb else "",
-        title = title.ifBlank { name.ifBlank { id } },
+        title = title.ifBlank { name.ifBlank { idStr } },
         duration = if (duration > 0) duration else time,
-        favorite = if (favorite > 0) favorite else favorites,
-        pv = if (pv > 0) pv else views,
+        favorite = if (favLong > 0) favLong else favsLong,
+        pv = if (pvLong > 0) pvLong else viewsLong,
     )
 }
 

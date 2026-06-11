@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -17,12 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.CheckBox
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,11 +27,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.tw.downloader.R
 import com.tw.downloader.data.model.*
 import com.tw.downloader.ui.components.SettingsSheet
 import com.tw.downloader.ui.theme.*
@@ -43,7 +42,6 @@ import com.tw.downloader.viewmodel.WaterfallViewModel
 @Composable
 fun WaterfallScreen(
     vm: WaterfallViewModel,
-    onNavigateToFiles: () -> Unit,
     onNavigateToProxy: () -> Unit,
     onNavigateToPlayer: (List<MediaItem>, Int) -> Unit,
 ) {
@@ -66,14 +64,12 @@ fun WaterfallScreen(
 
     Scaffold(
         containerColor = Background,
+        contentWindowInsets = WindowInsets(0.dp),
         bottomBar = {
             if (vm.selectMode) {
                 SelectionToolbar(
                     selectedCount = vm.selectedIds.size,
                     downloading = vm.downloading,
-                    downloadProgress = vm.downloadProgress,
-                    downloadCurrentIndex = vm.downloadCurrentIndex,
-                    downloadTotalCount = vm.downloadTotalCount,
                     isAllSelected = vm.items.isNotEmpty() && vm.items.all { it.id in vm.selectedIds },
                     onCancel = { vm.toggleSelectMode() },
                     onSelectAll = { vm.toggleSelectAll() },
@@ -92,7 +88,7 @@ fun WaterfallScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -110,19 +106,15 @@ fun WaterfallScreen(
                         onClick = { vm.toggleSelectMode() },
                     )
                     NavButton(
-                        icon = { Icon(Icons.Outlined.VpnKey, "代理", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
+                        icon = { Icon(painterResource(R.drawable.clash), "代理", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
                         onClick = onNavigateToProxy,
                     )
                     NavButton(
-                        icon = { Icon(Icons.Outlined.Folder, "文件", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
-                        onClick = onNavigateToFiles,
-                    )
-                    NavButton(
-                        icon = { Icon(Icons.Filled.Settings, "设置", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
+                        icon = { Icon(painterResource(R.drawable.set), "设置", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
                         onClick = { vm.updateShowSettings(true) },
                     )
                     NavButton(
-                        icon = { Icon(Icons.Filled.Refresh, "刷新", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
+                        icon = { Icon(painterResource(R.drawable.refresh), "刷新", tint = TextSecondary, modifier = Modifier.size(22.dp)) },
                         onClick = { vm.loadData() },
                     )
                 }
@@ -155,6 +147,15 @@ fun WaterfallScreen(
                         )
                     }
                 }
+            }
+
+            // Loading indicator for refresh
+            if (vm.loading && vm.items.isNotEmpty()) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = Accent,
+                    trackColor = Accent.copy(alpha = 0.1f),
+                )
             }
 
             // Content
@@ -210,8 +211,17 @@ fun WaterfallScreen(
 
                             if (vm.loadingMore) {
                                 item {
-                                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(color = Accent, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                                    Column(
+                                        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                    ) {
+                                        LinearProgressIndicator(
+                                            modifier = Modifier.fillMaxWidth().height(2.dp).clip(RoundedCornerShape(1.dp)),
+                                            color = Accent,
+                                            trackColor = Accent.copy(alpha = 0.1f),
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                        Text("加载更多...", fontSize = 11.sp, color = TextSecondary)
                                     }
                                 }
                             } else if (!vm.hasNext && vm.items.isNotEmpty()) {
@@ -343,8 +353,8 @@ private fun MediaCard(
                 }
             }
 
-            // Duration badge
-            if (item.duration > 0) {
+            // File size badge
+            if (item.fileSize > 0) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -354,7 +364,7 @@ private fun MediaCard(
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
                     Text(
-                        formatDuration(item.duration),
+                        formatFileSize(item.fileSize),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextPrimary,
@@ -382,9 +392,6 @@ private fun MediaCard(
 private fun SelectionToolbar(
     selectedCount: Int,
     downloading: Boolean,
-    downloadProgress: Int,
-    downloadCurrentIndex: Int,
-    downloadTotalCount: Int,
     isAllSelected: Boolean,
     onCancel: () -> Unit,
     onSelectAll: () -> Unit,
@@ -394,67 +401,62 @@ private fun SelectionToolbar(
         color = Surface.copy(alpha = 0.95f),
         tonalElevation = 8.dp,
     ) {
-        Column {
-            if (downloading) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    LinearProgressIndicator(
-                        progress = { downloadProgress / 100f },
-                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                        color = Accent,
-                        trackColor = Accent.copy(alpha = 0.15f),
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("$downloadCurrentIndex/$downloadTotalCount 个文件", fontSize = 11.sp, color = TextSecondary)
-                        Text("$downloadProgress%", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Accent)
-                    }
-                }
-            }
-
-            Row(
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "取消",
+                fontSize = 14.sp,
+                color = Accent,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.clickable(onClick = onCancel),
+            )
+            Spacer(Modifier.width(16.dp))
+            Box(Modifier.width(0.5.dp).height(16.dp).background(Border))
+            Spacer(Modifier.width(16.dp))
+            Text(
+                if (isAllSelected) "取消全选" else "全选",
+                fontSize = 14.sp,
+                color = Accent,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.clickable(onClick = onSelectAll),
+            )
+            Spacer(Modifier.weight(1f))
+            Text("已选 $selectedCount 项", fontSize = 13.sp, color = TextSecondary)
+            Spacer(Modifier.width(12.dp))
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (selectedCount == 0 && !downloading) TextTertiary.copy(alpha = 0.6f) else Accent)
+                    .clickable(enabled = selectedCount > 0 || downloading, onClick = onDownload)
+                    .padding(horizontal = 18.dp, vertical = 7.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "取消",
+                    if (downloading) "停止" else "下载",
                     fontSize = 14.sp,
-                    color = Accent,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable(onClick = onCancel),
+                    fontWeight = FontWeight.SemiBold,
+                    color = Background,
                 )
-                Spacer(Modifier.width(16.dp))
-                Box(Modifier.width(0.5.dp).height(16.dp).background(Border))
-                Spacer(Modifier.width(16.dp))
-                Text(
-                    if (isAllSelected) "取消全选" else "全选",
-                    fontSize = 14.sp,
-                    color = Accent,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable(onClick = onSelectAll),
-                )
-                Spacer(Modifier.weight(1f))
-                Text("已选 $selectedCount 项", fontSize = 13.sp, color = TextSecondary)
-                Spacer(Modifier.width(12.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (selectedCount == 0 && !downloading) TextTertiary.copy(alpha = 0.6f) else Accent)
-                        .clickable(enabled = selectedCount > 0 || downloading, onClick = onDownload)
-                        .padding(horizontal = 18.dp, vertical = 7.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (downloading) "停止" else "下载",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Background,
-                    )
-                }
             }
         }
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return ""
+    val kb = bytes / 1024.0
+    val mb = kb / 1024.0
+    val gb = mb / 1024.0
+    return when {
+        gb >= 1 -> "%.1f GB".format(gb)
+        mb >= 1 -> "%.1f MB".format(mb)
+        kb >= 1 -> "%.0f KB".format(kb)
+        else -> "$bytes B"
     }
 }
 

@@ -8,27 +8,36 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.tw.downloader.ui.theme.Accent
+import com.tw.downloader.ui.theme.TextSecondary
 
 data class VideoEntry(
+    val id: String = "",
     val src: String,
     val poster: String = "",
     val description: String = "",
@@ -39,6 +48,10 @@ fun PlayerScreen(
     videos: List<VideoEntry>,
     initialIndex: Int,
     onBack: () -> Unit,
+    onDownload: (VideoEntry) -> Unit = {},
+    downloadingIds: Set<String> = emptySet(),
+    downloadProgressMap: Map<String, Int> = emptyMap(),
+    downloadedIds: Set<String> = emptySet(),
 ) {
     val context = LocalContext.current
     var currentIndex by remember { mutableIntStateOf(initialIndex.coerceIn(0, (videos.size - 1).coerceAtLeast(0))) }
@@ -69,6 +82,11 @@ fun PlayerScreen(
 
     BackHandler(onBack = onBack)
 
+    val currentEntry = videos.getOrNull(currentIndex)
+    val isDownloading = currentEntry != null && currentEntry.id in downloadingIds
+    val isDownloaded = currentEntry != null && currentEntry.id in downloadedIds
+    val progress = currentEntry?.let { downloadProgressMap[it.id] }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -90,6 +108,36 @@ fun PlayerScreen(
             },
             modifier = Modifier.fillMaxSize(),
         )
+
+        // Download progress bar
+        if (isDownloading && progress != null) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.7f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("下载中...", fontSize = 12.sp, color = TextSecondary)
+                    Text("$progress%", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Accent)
+                }
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = Accent,
+                    trackColor = Color.White.copy(alpha = 0.15f),
+                )
+            }
+        }
 
         // Back button
         Box(
@@ -140,6 +188,24 @@ fun PlayerScreen(
                         if (activity?.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
                             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                         else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                },
+            )
+            // Download
+            ControlButton(
+                icon = {
+                    if (isDownloaded) {
+                        Icon(Icons.Filled.CheckCircle, "已下载", tint = Accent, modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(
+                            Icons.Filled.Download, "下载",
+                            tint = if (isDownloading) Accent.copy(alpha = 0.5f) else Accent,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                },
+                enabled = currentEntry != null && currentEntry.src.isNotEmpty() && !isDownloading && !isDownloaded,
+                onClick = {
+                    if (currentEntry != null) onDownload(currentEntry)
                 },
             )
         }

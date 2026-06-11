@@ -84,6 +84,7 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:2.11.0")
 
     // Image loading
+    implementation("io.coil-kt:coil:2.7.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Video player

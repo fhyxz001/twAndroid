@@ -1,9 +1,8 @@
-name: Android Build
+name: Build & Release
 
 on:
   push:
-    branches: [ main, master, develop ]
-    tags: [ 'v*' ]
+    branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
 
@@ -13,10 +12,14 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -29,33 +32,34 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      # ---------- Debug APK (every push / PR) ----------
+      - name: Generate version info
+        id: version
+        run: |
+          DATE=$(date +'%Y.%m.%d')
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "tag=v${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "name=${DATE}" >> "$GITHUB_OUTPUT"
+          echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      # ---- Debug APK (PR only) ----
       - name: Build Debug APK
+        if: github.event_name == 'pull_request'
         run: gradle assembleDebug --no-daemon
 
       - name: Upload Debug APK
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v5
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      # ---------- Release APK (only on tag push) ----------
+      # ---- Release APK + GitHub Release (push to main/master) ----
       - name: Decode Keystore
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/release.keystore
 
-      - name: Extract version from tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        id: version
-        run: |
-          TAG=${GITHUB_REF#refs/tags/v}
-          echo "name=$TAG" >> "$GITHUB_OUTPUT"
-          # Convert semver to integer: 1.2.3 -> 10203
-          CODE=$(echo "$TAG" | awk -F. '{ printf "%d%02d%02d", $1, $2, $3 }')
-          echo "code=$CODE" >> "$GITHUB_OUTPUT"
-
       - name: Build Release APK
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -65,28 +69,32 @@ jobs:
           VERSION_CODE: ${{ steps.version.outputs.code }}
         run: gradle assembleRelease --no-daemon
 
-      - name: Upload Release APK
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v5
-        with:
-          name: app-release
-          path: app/build/outputs/apk/release/app-release.apk
+      - name: Rename APK
+        if: github.event_name == 'push'
+        run: |
+          mv app/build/outputs/apk/release/app-release.apk \
+             app/build/outputs/apk/release/X下载器-${{ steps.version.outputs.name }}.apk
 
-      # ---------- GitHub Release (only on tag push) ----------
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          name: TW Downloader ${{ steps.version.outputs.name }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: X下载器 ${{ steps.version.outputs.name }}
           body: |
-            ## TW Downloader ${{ steps.version.outputs.name }}
+            ## X下载器 ${{ steps.version.outputs.name }}
+
+            **版本号**: ${{ steps.version.outputs.name }} (build ${{ steps.version.outputs.code }})
 
             ### 安装说明
             下载下方 APK 文件，传输到手机安装即可。
 
+            ### 更新内容
+            ${{ github.event.head_commit.message }}
+
             ---
-            *Automated build from ${{ github.sha }}*
+            *构建自 `${{ github.sha }}`*
           files: |
-            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/X下载器-${{ steps.version.outputs.name }}.apk
           draft: false
           prerelease: false
