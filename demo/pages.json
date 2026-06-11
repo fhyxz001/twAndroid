@@ -1,0 +1,56 @@
+{
+	"pages": [
+		{
+			"path": "pages/waterfall/waterfall",
+			"style": {
+				"navigationBarTitleText": "瀑布流预览",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "TW Downloader"
+			}
+		},
+		{
+			"path": "pages/files/files",
+			"style": {
+				"navigationBarTitleText": "本地文件",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/play/play",
+			"style": {
+				"navigationBarTitleText": "播放",
+				"navigationStyle": "custom",
+				"backgroundColor": "#000000",
+				"disableScroll": true,
+				"app-plus": {
+					"backgroundColorTop": "#000000",
+					"animationType": "fade-in"
+				}
+			}
+		},
+		{
+			"path": "pages/proxy/proxy",
+			"style": {
+				"navigationBarTitleText": "代理设置"
+			}
+		},
+		{
+			"path": "pages/proxy/edit",
+			"style": {
+				"navigationBarTitleText": "编辑方案"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "white",
+		"navigationBarTitleText": "TW Downloader",
+		"navigationBarBackgroundColor": "#0C0A09",
+		"backgroundColor": "#0C0A09"
+	},
+	"uniIdRouter": {}
+}

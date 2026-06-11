@@ -1,0 +1,160 @@
+<template>
+	<view class="wrap" :style="screenStyle">
+		<video
+			:id="'pv-0'"
+			class="video"
+			:style="videoStyle"
+			:src="videoList.length ? videoList[current].src : ''"
+			:poster="videoList.length ? (videoList[current].poster || '') : ''"
+			:autoplay="true"
+			:loop="true"
+			:controls="true"
+			:show-fullscreen-btn="false"
+			:show-center-play-btn="true"
+			:enable-progress-gesture="true"
+			object-fit="contain"
+		></video>
+
+		<!-- 左上返回 -->
+		<view class="back" :style="{ top: backTop + 'px' }" @click="goBack">
+			<image class="back-icon" src="/static/back.png"></image>
+		</view>
+
+		<!-- 右下角控制栏 -->
+		<view class="controls" :style="{ bottom: controlsBottom + 'px' }">
+			<view class="ctrl-item" @click="prev">
+				<text class="arrow">&#9650;</text>
+			</view>
+			<view class="ctrl-item" @click="next">
+				<text class="arrow">&#9660;</text>
+			</view>
+			<view class="ctrl-item" @click="toggleLandscape">
+				<image class="icon" src="/static/h.png"></image>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script>
+	export default {
+		data() {
+			return {
+				videoList: [],
+				current: 0,
+				windowWidth: 375,
+				windowHeight: 667,
+				statusBarHeight: 20,
+				videoPad: 0,
+			};
+		},
+		computed: {
+			screenStyle() {
+				return { width: this.windowWidth + 'px', height: this.windowHeight + 'px' };
+			},
+			videoStyle() {
+				return {
+					left: '0px',
+					top: '0px',
+					width: this.windowWidth + 'px',
+					height: this.windowHeight + 'px',
+				};
+			},
+			backTop() {
+				return this.statusBarHeight + 6;
+			},
+			controlsBottom() {
+				return 80;
+			},
+		},
+		onLoad() {
+			const info = uni.getSystemInfoSync();
+			this.windowWidth = info.windowWidth;
+			this.windowHeight = info.windowHeight;
+			this.statusBarHeight = info.statusBarHeight || 20;
+
+			const ch = this.getOpenerEventChannel();
+			ch.on('initData', (data) => {
+				this.videoList = data.list || [];
+				this.current = data.index || 0;
+			});
+		},
+		onUnload() {
+			this.pause();
+		},
+		methods: {
+			getCtx() {
+				return uni.createVideoContext('pv-0', this);
+			},
+			play() {
+				const ctx = this.getCtx();
+				if (ctx) ctx.play();
+			},
+			pause() {
+				const ctx = this.getCtx();
+				if (ctx) ctx.pause();
+			},
+			prev() {
+				if (this.current <= 0) return;
+				this.current--;
+			},
+			next() {
+				if (this.current >= this.videoList.length - 1) return;
+				this.current++;
+			},
+			toggleLandscape() {
+				const ctx = this.getCtx();
+				if (ctx) ctx.requestFullScreen({ direction: -90 });
+			},
+			goBack() {
+				uni.navigateBack({ delta: 1 });
+			},
+		},
+	};
+</script>
+
+<style>
+	.wrap {
+		background-color: #000000;
+		position: relative;
+	}
+	.video {
+		position: absolute;
+		left: 0;
+		top: 0;
+	}
+	.back {
+		position: absolute;
+		left: 24rpx;
+		width: 52rpx;
+		height: 52rpx;
+		justify-content: center;
+		align-items: center;
+	}
+	.back-icon {
+		width: 44rpx;
+		height: 44rpx;
+	}
+	.controls {
+		position: absolute;
+		right: 24rpx;
+		flex-direction: column;
+		align-items: center;
+	}
+	.ctrl-item {
+		width: 100rpx;
+		height: 100rpx;
+		justify-content: center;
+		align-items: center;
+		margin-bottom: 32rpx;
+	}
+	.icon {
+		width: 72rpx;
+		height: 72rpx;
+	}
+	.arrow {
+		font-size: 64rpx;
+		line-height: 100rpx;
+		color: #EAB308;
+		text-align: center;
+	}
+</style>

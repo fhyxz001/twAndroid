@@ -1,0 +1,89 @@
+name: Android Build
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      # ---------- Debug APK (every push / PR) ----------
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      # ---------- Release APK (only on tag push) ----------
+      - name: Decode Keystore
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/release.keystore
+
+      - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        run: |
+          TAG=${GITHUB_REF#refs/tags/v}
+          echo "name=$TAG" >> "$GITHUB_OUTPUT"
+          # Convert semver to integer: 1.2.3 -> 10203
+          CODE=$(echo "$TAG" | awk -F. '{ printf "%d%02d%02d", $1, $2, $3 }')
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: gradle assembleRelease --no-daemon
+
+      - name: Upload Release APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/app-release.apk
+
+      # ---------- GitHub Release (only on tag push) ----------
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TW Downloader ${{ steps.version.outputs.name }}
+          body: |
+            ## TW Downloader ${{ steps.version.outputs.name }}
+
+            ### 安装说明
+            下载下方 APK 文件，传输到手机安装即可。
+
+            ---
+            *Automated build from ${{ github.sha }}*
+          files: |
+            app/build/outputs/apk/release/app-release.apk
+          draft: false
+          prerelease: false
