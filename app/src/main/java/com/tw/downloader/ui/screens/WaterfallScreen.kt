@@ -7,8 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
@@ -46,7 +44,6 @@ fun WaterfallScreen(
     onNavigateToPlayer: (List<MediaItem>, Int) -> Unit,
 ) {
     val gridState = rememberLazyStaggeredGridState()
-    val allTabs = remember { listOf(Tag("", "全部")) + ALL_TAGS }
 
     LaunchedEffect(gridState.canScrollForward) {
         if (!gridState.canScrollForward && vm.items.isNotEmpty() && !vm.loadingMore) {
@@ -56,9 +53,7 @@ fun WaterfallScreen(
 
     if (vm.showSettings) {
         SettingsSheet(
-            config = vm.config,
             onDismiss = { vm.updateShowSettings(false) },
-            onSave = { vm.saveConfig(it) },
         )
     }
 
@@ -120,39 +115,11 @@ fun WaterfallScreen(
                 }
             }
 
-            // Category tabs
-            LazyRow(
-                modifier = Modifier.padding(bottom = 12.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(allTabs, key = { it.code }) { tab ->
-                    val active = tab.code == vm.currentTag
-                    val bgColor by animateColorAsState(if (active) Accent else Surface, label = "tabBg")
-                    val textColor = if (active) Background else TextSecondary
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(15.dp))
-                            .background(bgColor)
-                            .then(if (!active) Modifier.border(0.5.dp, Border, RoundedCornerShape(15.dp)) else Modifier)
-                            .clickable { vm.switchTab(tab.code) }
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                    ) {
-                        Text(
-                            tab.name,
-                            fontSize = 13.sp,
-                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                            color = textColor,
-                        )
-                    }
-                }
-            }
-
+            // Category tabs removed
             // Loading indicator for refresh
             if (vm.loading && vm.items.isNotEmpty()) {
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    modifier = Modifier.fillMaxWidth().height(2.dp).padding(bottom = 12.dp),
                     color = Accent,
                     trackColor = Accent.copy(alpha = 0.1f),
                 )
@@ -181,7 +148,7 @@ fun WaterfallScreen(
                                 Text("📹", fontSize = 40.sp)
                                 Spacer(Modifier.height(8.dp))
                                 Text("暂无内容", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                Text("换个分类或筛选条件试试", fontSize = 14.sp, color = TextSecondary)
+                                Text("下拉刷新重试", fontSize = 14.sp, color = TextSecondary)
                             }
                         }
                     }

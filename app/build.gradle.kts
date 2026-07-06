@@ -87,6 +87,9 @@ dependencies {
     implementation("io.coil-kt:coil:2.7.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // HTML parsing
+    implementation("org.jsoup:jsoup:1.18.3")
+
     // Video player
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")

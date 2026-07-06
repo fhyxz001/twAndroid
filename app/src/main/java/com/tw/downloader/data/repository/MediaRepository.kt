@@ -4,14 +4,12 @@ import android.content.ContentValues
 import android.content.Context
 import android.os.Environment
 import android.provider.MediaStore
-import com.tw.downloader.data.api.MediaApi
 import com.tw.downloader.data.model.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import okhttp3.Request
+import org.jsoup.Jsoup
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
@@ -21,12 +19,14 @@ class MediaRepository(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     private val prefs = context.getSharedPreferences("tw_downloader", Context.MODE_PRIVATE)
 
-    private var currentApi: MediaApi = buildApi()
+    private var httpClient: OkHttpClient = buildClient()
 
-    private fun buildApi(): MediaApi {
+    private fun buildClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
 
         val proxyConfig = getProxyConfig()
         if (proxyConfig.enabled && proxyConfig.selectedId.isNotEmpty()) {
@@ -36,40 +36,52 @@ class MediaRepository(private val context: Context) {
             }
         }
 
-        val retrofit = Retrofit.Builder()
-            .baseUrl("https://truvaze.com/")
-            .client(builder.build())
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-
-        return retrofit.create(MediaApi::class.java)
+        return builder.build()
     }
 
     fun refreshApi() {
-        currentApi = buildApi()
+        httpClient = buildClient()
     }
 
-    suspend fun fetchMedia(
-        page: Int,
-        config: WaterfallConfig,
-        category: String,
-    ): Pair<List<MediaItem>, Boolean> {
-        val params = mutableMapOf(
-            "page" to page.toString(),
-            "per_page" to config.perPage.toString(),
-            "ids" to "",
-            "isAnimeOnly" to "0",
-            "sort" to config.sort,
-        )
-        if (config.minTime > 0) params["min_time"] = config.minTime.toString()
-        if (config.maxTime < 86400) params["max_time"] = config.maxTime.toString()
-        if (category.isNotEmpty()) params["category"] = category
-        if (config.range != "daily") params["range"] = config.range
+    /**
+     * Fetch media list from `https://ttt.monsnode.com/`.
+     * The response is a full HTML page; we parse <div class="listn"> blocks,
+     * extracting the video url from <a href="..."> and the cover url from <img src="...">.
+     */
+    suspend fun fetchMedia(): List<MediaItem> {
+        val request = Request.Builder()
+            .url(BASE_URL)
+            .header("User-Agent", DEFAULT_UA)
+            .get()
+            .build()
 
-        val response = currentApi.getMedia(params)
-        val items = response.items.mapNotNull { it.toMediaItem() }
-        val hasNext = response.items.size >= config.perPage
-        return items to hasNext
+        val response = httpClient.newCall(request).execute()
+        val body = response.body?.string()
+            ?: throw IllegalStateException("Empty response body")
+        if (!response.isSuccessful) {
+            throw IllegalStateException("HTTP ${response.code}")
+        }
+
+        val doc = Jsoup.parse(body)
+        val items = mutableListOf<MediaItem>()
+        for (div in doc.select("div.listn")) {
+            val anchor = div.selectFirst("a[href]") ?: continue
+            val videoUrl = anchor.absUrl("href").ifEmpty { anchor.attr("href") }.trim()
+            if (!videoUrl.startsWith("http://") && !videoUrl.startsWith("https://")) continue
+
+            val img = div.selectFirst("img[src]")
+            val coverUrl = img?.absUrl("src")?.ifEmpty { img.attr("src") }?.trim() ?: ""
+
+            items.add(
+                MediaItem(
+                    id = videoUrl,
+                    url = videoUrl,
+                    thumbnail = coverUrl,
+                    title = "",
+                )
+            )
+        }
+        return items
     }
 
     // Download records
@@ -98,34 +110,6 @@ class MediaRepository(private val context: Context) {
 
     fun getDownloadedIds(): Set<String> {
         return getDownloadRecords().map { it.id }.toSet()
-    }
-
-    // Config
-    fun getWaterfallConfig(): WaterfallConfig {
-        val raw = prefs.getString("waterfall_config", null) ?: return WaterfallConfig()
-        return try {
-            val map = json.decodeFromString<Map<String, String>>(raw)
-            WaterfallConfig(
-                perPage = map["per_page"]?.toIntOrNull() ?: 10,
-                sort = map["sort"] ?: "pv",
-                range = map["range"] ?: "daily",
-                minTime = map["min_time"]?.toLongOrNull() ?: 0,
-                maxTime = map["max_time"]?.toLongOrNull() ?: 86400,
-            )
-        } catch (e: Exception) {
-            WaterfallConfig()
-        }
-    }
-
-    fun saveWaterfallConfig(config: WaterfallConfig) {
-        val map = mapOf(
-            "per_page" to config.perPage.toString(),
-            "sort" to config.sort,
-            "range" to config.range,
-            "min_time" to config.minTime.toString(),
-            "max_time" to config.maxTime.toString(),
-        )
-        prefs.edit().putString("waterfall_config", json.encodeToString(map)).apply()
     }
 
     // Proxy config
@@ -157,5 +141,11 @@ class MediaRepository(private val context: Context) {
         } catch (e: Exception) {
             null
         }
+    }
+
+    companion object {
+        private const val BASE_URL = "https://ttt.monsnode.com/"
+        private const val DEFAULT_UA =
+            "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
     }
 }

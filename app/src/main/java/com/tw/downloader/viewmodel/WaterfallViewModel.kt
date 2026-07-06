@@ -6,7 +6,6 @@ import android.content.ContentValues
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationCompat
@@ -38,12 +37,6 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var hasNext by mutableStateOf(false)
         private set
-    var currentPage by mutableIntStateOf(1)
-        private set
-    var currentTag by mutableStateOf("")
-        private set
-    var config by mutableStateOf(WaterfallConfig())
-        private set
     var selectMode by mutableStateOf(false)
         private set
     var selectedIds by mutableStateOf(emptySet<String>())
@@ -68,7 +61,6 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        config = repo.getWaterfallConfig()
         loadData()
     }
 
@@ -78,14 +70,6 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateShowSettings(show: Boolean) {
         showSettings = show
-    }
-
-    fun switchTab(tag: String) {
-        if (tag == currentTag || loading) return
-        currentTag = tag
-        currentPage = 1
-        hasNext = false
-        loadData()
     }
 
     fun toggleSelectMode() {
@@ -102,15 +86,6 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
         selectedIds = if (allIds == selectedIds) emptySet() else allIds
     }
 
-    fun saveConfig(newConfig: WaterfallConfig) {
-        config = newConfig
-        repo.saveWaterfallConfig(newConfig)
-        showSettings = false
-        currentPage = 1
-        hasNext = false
-        loadData()
-    }
-
     fun loadData() {
         if (loading) return
         viewModelScope.launch {
@@ -118,10 +93,9 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
             loadError = ""
             selectedIds = emptySet()
             try {
-                val (result, next) = repo.fetchMedia(1, config, currentTag)
+                val result = repo.fetchMedia()
                 items = result
-                currentPage = 1
-                hasNext = next
+                hasNext = false
                 fetchFileSizes(result)
             } catch (e: Exception) {
                 items = emptyList()
@@ -133,21 +107,7 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun loadMore() {
-        if (loadingMore || !hasNext || loading) return
-        viewModelScope.launch {
-            loadingMore = true
-            val nextPage = currentPage + 1
-            try {
-                val (result, next) = repo.fetchMedia(nextPage, config, currentTag)
-                items = items + result
-                currentPage = nextPage
-                hasNext = next
-                fetchFileSizes(result)
-            } catch (_: Exception) {
-            } finally {
-                loadingMore = false
-            }
-        }
+        // Single-page response - no pagination
     }
 
     private fun fetchFileSizes(newItems: List<MediaItem>) {
