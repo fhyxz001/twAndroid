@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -425,19 +424,6 @@ private fun formatFileSize(bytes: Long): String {
         kb >= 1 -> "%.0f KB".format(kb)
         else -> "$bytes B"
     }
-}
-
-private fun formatDuration(seconds: Long): String {
-    if (seconds <= 0) return ""
-    if (seconds < 60) return "${seconds}秒"
-    if (seconds < 3600) {
-        val m = seconds / 60
-        val s = seconds % 60
-        return if (s > 0) "$m:${s.toString().padStart(2, '0')}" else "${m}分钟"
-    }
-    val h = seconds / 3600
-    val m = (seconds % 3600) / 60
-    return "$h:${m.toString().padStart(2, '0')}"
 }
 
 private fun formatCount(num: Long): String {

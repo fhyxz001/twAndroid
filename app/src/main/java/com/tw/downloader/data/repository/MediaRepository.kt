@@ -5,6 +5,8 @@ import android.content.Context
 import android.os.Environment
 import android.provider.MediaStore
 import com.tw.downloader.data.model.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import okhttp3.OkHttpClient
@@ -48,7 +50,7 @@ class MediaRepository(private val context: Context) {
      * The response is a full HTML page; we parse <div class="listn"> blocks,
      * extracting the video url from <a href="..."> and the cover url from <img src="...">.
      */
-    suspend fun fetchMedia(): List<MediaItem> {
+    suspend fun fetchMedia(): List<MediaItem> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(BASE_URL)
             .header("User-Agent", DEFAULT_UA)
@@ -81,7 +83,7 @@ class MediaRepository(private val context: Context) {
                 )
             )
         }
-        return items
+        items
     }
 
     // Download records

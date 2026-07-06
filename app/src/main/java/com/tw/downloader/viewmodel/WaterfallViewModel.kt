@@ -113,10 +113,7 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
     private fun fetchFileSizes(newItems: List<MediaItem>) {
         fileSizeJob?.cancel()
         fileSizeJob = viewModelScope.launch(Dispatchers.IO) {
-            val client = OkHttpClient.Builder()
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .build()
+            val client = buildProxyClient()
             for (item in newItems) {
                 if (fileSizeCache.containsKey(item.id)) continue
                 try {
@@ -150,13 +147,13 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
         return builder.build()
     }
 
-    private fun performDownload(
+    private suspend fun performDownload(
         client: OkHttpClient,
         id: String,
         url: String,
         title: String,
         thumbnail: String,
-        onProgress: (Int) -> Unit,
+        onProgress: suspend (Int) -> Unit,
     ) {
         val app = getApplication<Application>()
         val request = Request.Builder().url(url).build()
@@ -284,7 +281,9 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
                     thumbnail = entry.poster,
                     onProgress = { percent ->
                         updateSingleNotification(notifId, entry.description, percent)
-                        downloadProgressMap = downloadProgressMap + (entry.id to percent)
+                        withContext(Dispatchers.Main) {
+                            downloadProgressMap = downloadProgressMap + (entry.id to percent)
+                        }
                     },
                 )
                 withContext(Dispatchers.Main) {
