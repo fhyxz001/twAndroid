@@ -20,6 +20,16 @@ import java.io.File
 @Composable
 fun SettingsSheet(
     onDismiss: () -> Unit,
+    onCheckUpdate: () -> Unit = {},
+    checkingUpdate: Boolean = false,
+    updateError: String = "",
+    updateDownloading: Boolean = false,
+    updateProgress: Int = 0,
+    showUpdateDialog: Boolean = false,
+    latestVersion: String = "",
+    latestApkUrl: String = "",
+    onDismissUpdateDialog: () -> Unit = {},
+    onDownloadUpdate: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var cacheSize by remember { mutableStateOf(calcCacheSize(context.cacheDir)) }
@@ -40,6 +50,73 @@ fun SettingsSheet(
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) { Text("取消", color = Accent) }
+            },
+            containerColor = Surface,
+        )
+    }
+
+    // Update dialog
+    if (showUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = onDismissUpdateDialog,
+            title = {
+                Text(
+                    if (latestApkUrl.isNotEmpty()) "发现新版本" else "检查更新",
+                    color = TextPrimary,
+                )
+            },
+            text = {
+                when {
+                    checkingUpdate -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Accent,
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text("正在检查更新...", fontSize = 14.sp, color = TextSecondary)
+                        }
+                    }
+                    updateError.isNotEmpty() && latestApkUrl.isEmpty() -> {
+                        Text(updateError, fontSize = 14.sp, color = Error)
+                    }
+                    updateDownloading -> {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("正在下载 $latestVersion...", fontSize = 14.sp, color = TextSecondary)
+                            Spacer(Modifier.height(12.dp))
+                            LinearProgressIndicator(
+                                progress = { updateProgress / 100f },
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = Accent,
+                                trackColor = Accent.copy(alpha = 0.15f),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text("$updateProgress%", fontSize = 12.sp, color = TextTertiary)
+                        }
+                    }
+                    else -> {
+                        Column {
+                            Text("新版本: $latestVersion", fontSize = 14.sp, color = TextPrimary)
+                            Spacer(Modifier.height(4.dp))
+                            Text("是否下载更新？", fontSize = 14.sp, color = TextSecondary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (latestApkUrl.isNotEmpty() && !updateDownloading) {
+                    TextButton(onClick = onDownloadUpdate) {
+                        Text("下载", color = Accent)
+                    }
+                }
+            },
+            dismissButton = {
+                if (!updateDownloading) {
+                    TextButton(onClick = onDismissUpdateDialog) {
+                        Text(if (updateError.isNotEmpty()) "关闭" else "取消", color = TextSecondary)
+                    }
+                }
             },
             containerColor = Surface,
         )
@@ -66,13 +143,41 @@ fun SettingsSheet(
             Text("设置", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Spacer(Modifier.height(16.dp))
 
-            // Clear cache
             Column(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(SurfaceVariant)
             ) {
+                // Check update
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !checkingUpdate) { onCheckUpdate() }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("检查更新", fontSize = 15.sp, color = TextPrimary)
+                    if (checkingUpdate) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Accent,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text(
+                            if (updateError.isNotEmpty()) "检查失败" else "",
+                            fontSize = 13.sp,
+                            color = TextTertiary,
+                        )
+                    }
+                }
+
+                // Divider
+                Box(Modifier.fillMaxWidth().height(0.5.dp).background(Border))
+
+                // Clear cache
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

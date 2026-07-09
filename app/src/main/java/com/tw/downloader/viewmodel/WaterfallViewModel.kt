@@ -19,8 +19,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
 import java.net.InetSocketAddress
 import java.net.Proxy as JavaProxy
 
@@ -54,9 +57,26 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
     var currentRange by mutableStateOf("")
         private set
 
+    // Update check state
+    var checkingUpdate by mutableStateOf(false)
+        private set
+    var updateError by mutableStateOf("")
+        private set
+    var updateDownloading by mutableStateOf(false)
+        private set
+    var updateProgress by mutableStateOf(0)
+        private set
+    var showUpdateDialog by mutableStateOf(false)
+        private set
+    var latestVersion by mutableStateOf("")
+        private set
+    var latestApkUrl by mutableStateOf("")
+        private set
+
     private var downloadJob: Job? = null
     private val fileSizeCache = mutableMapOf<String, Long>()
     private var fileSizeJob: Job? = null
+    private var preloadJob: Job? = null
 
     private val notificationManager by lazy {
         app.getSystemService(NotificationManager::class.java)
@@ -104,6 +124,7 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
                 val result = repo.fetchMedia(currentRange)
                 items = result
                 hasNext = false
+                preloadThumbnails(result)
                 fetchFileSizes(result)
             } catch (e: Exception) {
                 items = emptyList()
@@ -116,6 +137,110 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadMore() {
         // Single-page response - no pagination
+    }
+
+    fun dismissUpdateDialog() {
+        showUpdateDialog = false
+        updateError = ""
+    }
+
+    /**
+     * Check latest release on GitHub and prompt user to download.
+     */
+    fun checkUpdate() {
+        if (checkingUpdate || updateDownloading) return
+        viewModelScope.launch {
+            checkingUpdate = true
+            updateError = ""
+            try {
+                val (version, apkUrl) = withContext(Dispatchers.IO) {
+                    val client = buildProxyClient()
+                    val request = Request.Builder()
+                        .url("https://api.github.com/repos/fhyxz001/twAndroid/releases/latest")
+                        .header("Accept", "application/json")
+                        .get()
+                        .build()
+                    val response = client.newCall(request).execute()
+                    val body = response.body?.string()
+                        ?: throw Exception("空响应")
+
+                    val release = Json { ignoreUnknownKeys = true }
+                        .decodeFromString<GitHubRelease>(body)
+                    val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
+                        ?: throw Exception("未找到 APK 下载文件")
+                    Pair(release.tag_name, apkAsset.browser_download_url)
+                }
+
+                latestVersion = version
+                latestApkUrl = apkUrl
+                showUpdateDialog = true
+            } catch (e: Exception) {
+                updateError = e.message ?: "检查更新失败"
+                latestVersion = ""
+                latestApkUrl = ""
+                showUpdateDialog = true
+            } finally {
+                checkingUpdate = false
+            }
+        }
+    }
+
+    /**
+     * Download the latest APK to Downloads directory via the proxy client.
+     */
+    fun downloadUpdate() {
+        if (latestApkUrl.isEmpty() || updateDownloading) return
+        viewModelScope.launch(Dispatchers.IO) {
+            updateDownloading = true
+            updateProgress = 0
+            try {
+                val app = getApplication<Application>()
+                val client = buildProxyClient()
+                val request = Request.Builder().url(latestApkUrl).get().build()
+                val response = client.newCall(request).execute()
+                val body = response.body ?: throw Exception("下载失败")
+
+                val totalBytes = body.contentLength()
+                var downloadedBytes = 0L
+                val fileName = "X下载器-$latestVersion.apk"
+
+                // Save via MediaStore to Downloads
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = app.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw Exception("创建文件失败")
+
+                app.contentResolver.openOutputStream(uri)?.use { output ->
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(8192)
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            downloadedBytes += read
+                            if (totalBytes > 0) {
+                                val pct = ((downloadedBytes * 100) / totalBytes).toInt()
+                                withContext(Dispatchers.Main) { updateProgress = pct }
+                            }
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    updateProgress = 100
+                    showUpdateDialog = false
+                }
+                showCompletionNotification(TwApp.NOTIFICATION_DOWNLOAD_SINGLE, "更新包已下载: $fileName")
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    updateError = e.message ?: "下载失败"
+                }
+            } finally {
+                withContext(Dispatchers.Main) { updateDownloading = false }
+            }
+        }
     }
 
     private fun fetchFileSizes(newItems: List<MediaItem>) {
@@ -137,6 +262,57 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * Pre-download thumbnails through proxy and serve from local cache.
+     * This bypasses Coil's internal proxy configuration, which may not work
+     * reliably for all proxy types. Saved to cacheDir/thumbnails/{id}.jpg.
+     */
+    private fun preloadThumbnails(newItems: List<MediaItem>) {
+        preloadJob?.cancel()
+        preloadJob = viewModelScope.launch(Dispatchers.IO) {
+            val client = buildProxyClient()
+            val cacheDir = File(getApplication<Application>().cacheDir, "thumbnails")
+            cacheDir.mkdirs()
+
+            for (item in newItems) {
+                if (item.thumbnail.isEmpty() || !item.thumbnail.startsWith("http")) continue
+
+                val cacheFile = File(cacheDir, "${item.id}.jpg")
+                if (cacheFile.exists()) {
+                    val localUri = cacheFile.toURI().toString()
+                    withContext(Dispatchers.Main) {
+                        items = items.map {
+                            if (it.id == item.id) it.copy(thumbnail = localUri) else it
+                        }
+                    }
+                    continue
+                }
+
+                try {
+                    val request = Request.Builder().url(item.thumbnail).get().build()
+                    val response = client.newCall(request).execute()
+                    if (!response.isSuccessful) continue
+                    val body = response.body ?: continue
+
+                    body.byteStream().use { input ->
+                        cacheFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    val localUri = cacheFile.toURI().toString()
+                    withContext(Dispatchers.Main) {
+                        items = items.map {
+                            if (it.id == item.id) it.copy(thumbnail = localUri) else it
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Fallback: keep original remote URL, Coil may still load it
+                }
             }
         }
     }
@@ -344,3 +520,15 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
         notificationManager.notify(notifId, notification)
     }
 }
+
+@Serializable
+private data class GitHubRelease(
+    val tag_name: String = "",
+    val assets: List<GitHubAsset> = emptyList(),
+)
+
+@Serializable
+private data class GitHubAsset(
+    val name: String = "",
+    val browser_download_url: String = "",
+)

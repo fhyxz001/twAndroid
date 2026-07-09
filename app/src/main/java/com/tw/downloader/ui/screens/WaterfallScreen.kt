@@ -53,6 +53,16 @@ fun WaterfallScreen(
     if (vm.showSettings) {
         SettingsSheet(
             onDismiss = { vm.updateShowSettings(false) },
+            onCheckUpdate = { vm.checkUpdate() },
+            checkingUpdate = vm.checkingUpdate,
+            updateError = vm.updateError,
+            updateDownloading = vm.updateDownloading,
+            updateProgress = vm.updateProgress,
+            showUpdateDialog = vm.showUpdateDialog,
+            latestVersion = vm.latestVersion,
+            latestApkUrl = vm.latestApkUrl,
+            onDismissUpdateDialog = { vm.dismissUpdateDialog() },
+            onDownloadUpdate = { vm.downloadUpdate() },
         )
     }
 
