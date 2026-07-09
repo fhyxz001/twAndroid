@@ -11,6 +11,8 @@ data class MediaItem(
     val favorite: Long = 0,
     val pv: Long = 0,
     val fileSize: Long = -1L, // -1 means unknown
+    val tweetUrl: String = "",
+    val tweetAccount: String = "",
 )
 
 @Serializable

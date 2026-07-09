@@ -115,6 +115,12 @@ fun WaterfallScreen(
             }
 
             // Category tabs removed
+
+            // Ranking period tabs
+            RankingTabs(
+                currentRange = vm.currentRange,
+                onRangeChange = { vm.changeRange(it) },
+            )
             // Loading indicator for refresh
             if (vm.loading && vm.items.isNotEmpty()) {
                 LinearProgressIndicator(
@@ -407,6 +413,50 @@ private fun SelectionToolbar(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Background,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RankingTabs(
+    currentRange: String,
+    onRangeChange: (String) -> Unit,
+) {
+    val tabs = listOf(
+        "" to "日榜",
+        "weekly" to "周榜",
+        "monthly" to "月榜",
+        "all" to "总榜",
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        tabs.forEach { (range, label) ->
+            val isSelected = currentRange == range
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isSelected) Accent else Surface)
+                    .border(
+                        width = if (isSelected) 0.dp else 0.5.dp,
+                        color = if (isSelected) Accent else Border,
+                        shape = RoundedCornerShape(8.dp),
+                    )
+                    .clickable { onRangeChange(range) }
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    fontSize = 13.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isSelected) Background else TextSecondary,
                 )
             }
         }

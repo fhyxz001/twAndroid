@@ -3,4 +3,3 @@
 -keepclassmembers class * {
     @kotlinx.serialization.Serializable *;
 }
--keep class org.jsoup.** { *; }

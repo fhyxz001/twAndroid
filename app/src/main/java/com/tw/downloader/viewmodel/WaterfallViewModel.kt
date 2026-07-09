@@ -51,6 +51,8 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var showSettings by mutableStateOf(false)
         private set
+    var currentRange by mutableStateOf("")
+        private set
 
     private var downloadJob: Job? = null
     private val fileSizeCache = mutableMapOf<String, Long>()
@@ -86,6 +88,12 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
         selectedIds = if (allIds == selectedIds) emptySet() else allIds
     }
 
+    fun changeRange(range: String) {
+        if (range == currentRange) return
+        currentRange = range
+        loadData()
+    }
+
     fun loadData() {
         if (loading) return
         viewModelScope.launch {
@@ -93,7 +101,7 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
             loadError = ""
             selectedIds = emptySet()
             try {
-                val result = repo.fetchMedia()
+                val result = repo.fetchMedia(currentRange)
                 items = result
                 hasNext = false
                 fetchFileSizes(result)
