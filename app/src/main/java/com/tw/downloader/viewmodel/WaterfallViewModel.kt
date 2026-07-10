@@ -78,6 +78,8 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
     private var fileSizeJob: Job? = null
     private var preloadJob: Job? = null
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     private val notificationManager by lazy {
         app.getSystemService(NotificationManager::class.java)
     }
@@ -166,7 +168,7 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
                         val body = response.body?.string()
                             ?: throw Exception("空响应")
 
-                        val release = Json { ignoreUnknownKeys = true }
+                        val release = json
                             .decodeFromString<GitHubRelease>(body)
                         val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
                             ?: throw Exception("未找到 APK 下载文件")
