@@ -83,6 +83,7 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        downloadedIds = repo.getDownloadedIds()
         loadData()
     }
 
@@ -153,26 +154,34 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
             checkingUpdate = true
             updateError = ""
             try {
-                val (version, apkUrl) = withContext(Dispatchers.IO) {
+                val (version, apkUrl, upToDate) = withContext(Dispatchers.IO) {
                     val client = buildProxyClient()
                     val request = Request.Builder()
                         .url("https://api.github.com/repos/fhyxz001/twAndroid/releases/latest")
                         .header("Accept", "application/json")
                         .get()
                         .build()
-                    val response = client.newCall(request).execute()
-                    val body = response.body?.string()
-                        ?: throw Exception("空响应")
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+                        val body = response.body?.string()
+                            ?: throw Exception("空响应")
 
-                    val release = Json { ignoreUnknownKeys = true }
-                        .decodeFromString<GitHubRelease>(body)
-                    val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
-                        ?: throw Exception("未找到 APK 下载文件")
-                    Pair(release.tag_name, apkAsset.browser_download_url)
+                        val release = Json { ignoreUnknownKeys = true }
+                            .decodeFromString<GitHubRelease>(body)
+                        val apkAsset = release.assets.firstOrNull { it.name.endsWith(".apk") }
+                            ?: throw Exception("未找到 APK 下载文件")
+
+                        val app = getApplication<Application>()
+                        val currentVersion = app.packageManager
+                            .getPackageInfo(app.packageName, 0).versionName ?: ""
+                        // Tag format: "v{DATE}-{SHA}"; versionName (CI) = "{DATE}"
+                        val releaseDate = release.tag_name.removePrefix("v").substringBefore('-')
+                        Triple(release.tag_name, apkAsset.browser_download_url, releaseDate == currentVersion)
+                    }
                 }
 
                 latestVersion = version
-                latestApkUrl = apkUrl
+                latestApkUrl = if (upToDate) "" else apkUrl
                 showUpdateDialog = true
             } catch (e: Exception) {
                 updateError = e.message ?: "检查更新失败"
@@ -197,42 +206,46 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
                 val app = getApplication<Application>()
                 val client = buildProxyClient()
                 val request = Request.Builder().url(latestApkUrl).get().build()
-                val response = client.newCall(request).execute()
-                val body = response.body ?: throw Exception("下载失败")
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+                    val body = response.body ?: throw Exception("下载失败")
 
-                val totalBytes = body.contentLength()
-                var downloadedBytes = 0L
-                val fileName = "X下载器-$latestVersion.apk"
+                    val totalBytes = body.contentLength()
+                    var downloadedBytes = 0L
+                    val fileName = "X下载器-$latestVersion.apk"
 
-                // Save via MediaStore to Downloads
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
-                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                }
-                val uri = app.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                    ?: throw Exception("创建文件失败")
+                    // Save via MediaStore to Downloads
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                        put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    }
+                    val uri = app.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: throw Exception("创建文件失败")
 
-                app.contentResolver.openOutputStream(uri)?.use { output ->
-                    body.byteStream().use { input ->
-                        val buffer = ByteArray(8192)
-                        var read: Int
-                        while (input.read(buffer).also { read = it } != -1) {
-                            output.write(buffer, 0, read)
-                            downloadedBytes += read
-                            if (totalBytes > 0) {
-                                val pct = ((downloadedBytes * 100) / totalBytes).toInt()
-                                withContext(Dispatchers.Main) { updateProgress = pct }
+                    val outputStream = app.contentResolver.openOutputStream(uri)
+                        ?: throw Exception("无法打开输出流")
+                    outputStream.use { output ->
+                        body.byteStream().use { input ->
+                            val buffer = ByteArray(8192)
+                            var read: Int
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                downloadedBytes += read
+                                if (totalBytes > 0) {
+                                    val pct = ((downloadedBytes * 100) / totalBytes).toInt()
+                                    withContext(Dispatchers.Main) { updateProgress = pct }
+                                }
                             }
                         }
                     }
-                }
 
-                withContext(Dispatchers.Main) {
-                    updateProgress = 100
-                    showUpdateDialog = false
+                    withContext(Dispatchers.Main) {
+                        updateProgress = 100
+                        showUpdateDialog = false
+                    }
+                    showCompletionNotification(TwApp.NOTIFICATION_DOWNLOAD_SINGLE, "更新包已下载: $fileName")
                 }
-                showCompletionNotification(TwApp.NOTIFICATION_DOWNLOAD_SINGLE, "更新包已下载: $fileName")
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     updateError = e.message ?: "下载失败"
@@ -251,13 +264,14 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
                 if (fileSizeCache.containsKey(item.id)) continue
                 try {
                     val request = Request.Builder().url(item.url).head().build()
-                    val response = client.newCall(request).execute()
-                    val size = response.body?.contentLength() ?: -1L
-                    if (size > 0) {
-                        fileSizeCache[item.id] = size
-                        withContext(Dispatchers.Main) {
-                            items = items.map {
-                                if (it.id == item.id) it.copy(fileSize = size) else it
+                    client.newCall(request).execute().use { response ->
+                        val size = response.body?.contentLength() ?: -1L
+                        if (size > 0) {
+                            fileSizeCache[item.id] = size
+                            withContext(Dispatchers.Main) {
+                                items = items.map {
+                                    if (it.id == item.id) it.copy(fileSize = size) else it
+                                }
                             }
                         }
                     }
@@ -294,20 +308,20 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
 
                 try {
                     val request = Request.Builder().url(item.thumbnail).get().build()
-                    val response = client.newCall(request).execute()
-                    if (!response.isSuccessful) continue
-                    val body = response.body ?: continue
-
-                    body.byteStream().use { input ->
-                        cacheFile.outputStream().use { output ->
-                            input.copyTo(output)
+                    val downloaded = client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) return@use false
+                        val body = response.body ?: return@use false
+                        body.byteStream().use { input ->
+                            cacheFile.outputStream().use { output -> input.copyTo(output) }
                         }
+                        true
                     }
-
-                    val localUri = cacheFile.toURI().toString()
-                    withContext(Dispatchers.Main) {
-                        items = items.map {
-                            if (it.id == item.id) it.copy(thumbnail = localUri) else it
+                    if (downloaded) {
+                        val localUri = cacheFile.toURI().toString()
+                        withContext(Dispatchers.Main) {
+                            items = items.map {
+                                if (it.id == item.id) it.copy(thumbnail = localUri) else it
+                            }
                         }
                     }
                 } catch (_: Exception) {
@@ -341,54 +355,57 @@ class WaterfallViewModel(app: Application) : AndroidViewModel(app) {
     ) {
         val app = getApplication<Application>()
         val request = Request.Builder().url(url).build()
-        val response = client.newCall(request).execute()
-        val body = response.body ?: throw IllegalStateException("Empty response")
-        val totalBytes = body.contentLength()
-        var downloadedBytes = 0L
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
+            val body = response.body ?: throw IllegalStateException("Empty response")
+            val totalBytes = body.contentLength()
+            var downloadedBytes = 0L
 
-        val ext = url.substringAfterLast('?', "")
-            .substringBefore('#')
-            .substringAfterLast('.', "mp4")
-            .take(4)
-        val fileName = "${id}.$ext"
+            val path = url.substringBefore('?').substringBefore('#')
+            val ext = path.substringAfterLast('.', "mp4").take(4)
+            val fileName = "${id}.$ext"
 
-        val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/TwDownloader")
-        }
-        val uri = app.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-            ?: throw IllegalStateException("Failed to create MediaStore entry")
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/TwDownloader")
+            }
+            val uri = app.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("Failed to create MediaStore entry")
 
-        app.contentResolver.openOutputStream(uri)?.use { output ->
-            body.byteStream().use { input ->
-                val buffer = ByteArray(8192)
-                var read: Int
-                while (input.read(buffer).also { read = it } != -1) {
-                    output.write(buffer, 0, read)
-                    downloadedBytes += read
-                    if (totalBytes > 0) {
-                        onProgress(((downloadedBytes * 100) / totalBytes).toInt())
+            val outputStream = app.contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Failed to open output stream")
+            outputStream.use { output ->
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(8192)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                        downloadedBytes += read
+                        if (totalBytes > 0) {
+                            onProgress(((downloadedBytes * 100) / totalBytes).toInt())
+                        }
                     }
                 }
             }
-        }
 
-        val record = DownloadRecord(
-            id = id,
-            title = title,
-            thumbnail = thumbnail,
-            url = url,
-            filePath = uri.toString(),
-            downloadedAt = System.currentTimeMillis(),
-        )
-        repo.saveDownloadRecord(record)
+            val record = DownloadRecord(
+                id = id,
+                title = title,
+                thumbnail = thumbnail,
+                url = url,
+                filePath = uri.toString(),
+                downloadedAt = System.currentTimeMillis(),
+            )
+            repo.saveDownloadRecord(record)
+        }
     }
 
     fun downloadSelected() {
         if (downloading) {
             downloadJob?.cancel()
             downloading = false
+            downloadingIds = emptySet()
             notificationManager.cancel(TwApp.NOTIFICATION_DOWNLOAD_BATCH)
             return
         }

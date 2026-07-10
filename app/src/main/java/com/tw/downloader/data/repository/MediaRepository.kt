@@ -1,9 +1,6 @@
 package com.tw.downloader.data.repository
 
-import android.content.ContentValues
 import android.content.Context
-import android.os.Environment
-import android.provider.MediaStore
 import com.tw.downloader.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -80,11 +77,11 @@ class MediaRepository(private val context: Context) {
             .build()
 
         val response = httpClient.newCall(request).execute()
-        val body = response.body?.string()
-            ?: throw IllegalStateException("Empty response body")
         if (!response.isSuccessful) {
             throw IllegalStateException("HTTP ${response.code}")
         }
+        val body = response.body?.string()
+            ?: throw IllegalStateException("Empty response body")
 
         parseRscPayload(body)
     }
@@ -196,23 +193,6 @@ class MediaRepository(private val context: Context) {
 
     fun saveProxyConfig(config: ProxyConfig) {
         prefs.edit().putString("proxy_config", json.encodeToString(config)).apply()
-    }
-
-    /**
-     * Save a video file to Movies/TwDownloader via MediaStore.
-     * Returns the content URI string on success, or null on failure.
-     */
-    fun saveVideoToMediaStore(fileName: String, mimeType: String = "video/mp4"): android.net.Uri? {
-        val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Video.Media.MIME_TYPE, mimeType)
-            put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/TwDownloader")
-        }
-        return try {
-            context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-        } catch (e: Exception) {
-            null
-        }
     }
 
     companion object {

@@ -61,7 +61,12 @@ fun SettingsSheet(
             onDismissRequest = onDismissUpdateDialog,
             title = {
                 Text(
-                    if (latestApkUrl.isNotEmpty()) "发现新版本" else "检查更新",
+                    when {
+                        checkingUpdate -> "检查更新"
+                        latestApkUrl.isNotEmpty() -> "发现新版本"
+                        updateError.isNotEmpty() -> "检查更新"
+                        else -> "已是最新版本"
+                    },
                     color = TextPrimary,
                 )
             },
@@ -95,6 +100,9 @@ fun SettingsSheet(
                             Text("$updateProgress%", fontSize = 12.sp, color = TextTertiary)
                         }
                     }
+                    latestApkUrl.isEmpty() -> {
+                        Text("当前已是最新版本 ($latestVersion)", fontSize = 14.sp, color = TextSecondary)
+                    }
                     else -> {
                         Column {
                             Text("新版本: $latestVersion", fontSize = 14.sp, color = TextPrimary)
@@ -114,7 +122,10 @@ fun SettingsSheet(
             dismissButton = {
                 if (!updateDownloading) {
                     TextButton(onClick = onDismissUpdateDialog) {
-                        Text(if (updateError.isNotEmpty()) "关闭" else "取消", color = TextSecondary)
+                        Text(
+                            if (latestApkUrl.isNotEmpty() && updateError.isEmpty()) "取消" else "关闭",
+                            color = TextSecondary,
+                        )
                     }
                 }
             },
