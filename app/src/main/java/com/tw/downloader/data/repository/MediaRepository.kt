@@ -6,6 +6,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.encodeToString
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -14,7 +17,7 @@ import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /**
- * Data model for pektino.com RSC payload parsing.
+ * Data model for pektino.com Next.js payload parsing.
  */
 @Serializable
 private data class RscItem(
@@ -60,19 +63,22 @@ class MediaRepository(private val context: Context) {
     }
 
     /**
-     * Fetch media list from pektino.com via Next.js RSC payload.
+     * Fetch media list from pektino.com.
+     *
+     * The site is a Next.js App Router application. Its ranking data is embedded in
+     * the server-rendered HTML as `self.__next_f.push([1, "..."])` flight chunks
+     * instead of being returned by a JSON API / RSC request, so we fetch the page
+     * itself and extract the `initialItems` array from those chunks.
+     *
      * @param range "" for 日榜, "weekly" for 周榜, "monthly" for 月榜, "all" for 总榜
      */
     suspend fun fetchMedia(range: String = ""): List<MediaItem> = withContext(Dispatchers.IO) {
         val path = if (range.isEmpty()) BASE_URL else "$BASE_URL/$range"
-        val url = "$path?_rsc=1q2w3"
 
         val request = Request.Builder()
-            .url(url)
+            .url(path)
             .header("User-Agent", DEFAULT_UA)
-            .header("Accept", "text/x-component")
-            .header("RSC", "1")
-            .header("Next-Router-State-Tree", RSC_STATE_TREE)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .get()
             .build()
 
@@ -83,59 +89,33 @@ class MediaRepository(private val context: Context) {
         val body = response.body?.string()
             ?: throw IllegalStateException("Empty response body")
 
-        parseRscPayload(body)
+        parseNextData(body)
     }
 
     /**
-     * Parse Next.js RSC payload to extract initialItems JSON array.
-     * The payload is a streaming text format; we search for "initialItems":[ and
-     * extract the full JSON array by tracking bracket depth.
+     * Parse the Next.js page HTML to extract the initialItems JSON array.
+     *
+     * The page streams its RSC flight data through inline scripts:
+     *   self.__next_f.push([1,"1:\"$Sreact.fragment\"\n4:..."])
+     * Each push argument is a JSON array whose second element is a fragment of the
+     * flight payload. We decode every chunk, concatenate them in document order and
+     * then locate `"initialItems":[` inside the reconstructed payload.
      */
-    private fun parseRscPayload(body: String): List<MediaItem> {
+    private fun parseNextData(body: String): List<MediaItem> {
         val prefix = "\"initialItems\":"
-        val startIdx = body.indexOf(prefix)
-        if (startIdx == -1) throw IllegalStateException("initialItems not found in RSC payload")
+        val payload = extractFlightPayload(body)?.takeIf { it.contains(prefix) } ?: body
+
+        val startIdx = payload.indexOf(prefix)
+        if (startIdx == -1) throw IllegalStateException("initialItems not found in Next.js payload")
 
         var idx = startIdx + prefix.length
-        // Skip whitespace
-        while (idx < body.length && body[idx] == ' ') idx++
-        if (idx >= body.length || body[idx] != '[') {
+        while (idx < payload.length && payload[idx].isWhitespace()) idx++
+        if (idx >= payload.length || payload[idx] != '[') {
             throw IllegalStateException("Expected '[' after initialItems:")
         }
 
-        var depth = 0
-        val sb = StringBuilder()
-        while (idx < body.length) {
-            val ch = body[idx]
-            sb.append(ch)
-            when (ch) {
-                '[' -> depth++
-                ']' -> {
-                    depth--
-                    if (depth == 0) break
-                }
-                '"' -> {
-                    // Skip string content (handle escapes)
-                    idx++
-                    while (idx < body.length) {
-                        val c = body[idx]
-                        sb.append(c)
-                        if (c == '\\') {
-                            idx++
-                            if (idx < body.length) sb.append(body[idx])
-                        } else if (c == '"') {
-                            break
-                        }
-                        idx++
-                    }
-                }
-            }
-            idx++
-        }
-
-        if (depth != 0) throw IllegalStateException("Unclosed initialItems array")
-
-        val itemsJson = sb.toString()
+        val itemsJson = extractBalanced(payload, idx)
+            ?: throw IllegalStateException("Unclosed initialItems array")
         val rscItems: List<RscItem> = json.decodeFromString(itemsJson)
 
         return rscItems.map { item ->
@@ -151,6 +131,80 @@ class MediaRepository(private val context: Context) {
                 tweetAccount = item.tweet_account ?: "",
             )
         }
+    }
+
+    /**
+     * Rebuild the RSC flight payload from all `self.__next_f.push([...])` chunks.
+     * Returns null when the page contains no such chunk (caller falls back to raw HTML).
+     */
+    private fun extractFlightPayload(html: String): String? {
+        val marker = "self.__next_f.push("
+        val chunks = StringBuilder()
+        var searchFrom = 0
+        var found = false
+
+        while (true) {
+            val markerIdx = html.indexOf(marker, searchFrom)
+            if (markerIdx == -1) break
+
+            var idx = markerIdx + marker.length
+            while (idx < html.length && html[idx].isWhitespace()) idx++
+            if (idx >= html.length || html[idx] != '[') {
+                searchFrom = markerIdx + marker.length
+                continue
+            }
+
+            val arrayJson = extractBalanced(html, idx)
+            if (arrayJson != null) {
+                try {
+                    val chunk = json.parseToJsonElement(arrayJson).jsonArray
+                    chunk.getOrNull(1)?.jsonPrimitive?.contentOrNull?.let {
+                        chunks.append(it)
+                        found = true
+                    }
+                } catch (_: Exception) {
+                    // Ignore malformed chunks and keep scanning
+                }
+                searchFrom = idx + arrayJson.length
+            } else {
+                searchFrom = markerIdx + marker.length
+            }
+        }
+
+        return if (found) chunks.toString() else null
+    }
+
+    /**
+     * Extract a balanced JSON array starting at [start] (which must point at '[').
+     * String contents are skipped so brackets inside strings do not affect depth.
+     */
+    private fun extractBalanced(text: String, start: Int): String? {
+        var depth = 0
+        var idx = start
+        while (idx < text.length) {
+            val ch = text[idx]
+            when (ch) {
+                '"' -> {
+                    idx++
+                    while (idx < text.length) {
+                        val c = text[idx]
+                        if (c == '\\') {
+                            idx += 2
+                            continue
+                        }
+                        if (c == '"') break
+                        idx++
+                    }
+                }
+                '[' -> depth++
+                ']' -> {
+                    depth--
+                    if (depth == 0) return text.substring(start, idx + 1)
+                }
+            }
+            idx++
+        }
+        return null
     }
 
     // Download records
@@ -199,7 +253,5 @@ class MediaRepository(private val context: Context) {
         private const val BASE_URL = "https://pektino.com/zh-CN"
         private const val DEFAULT_UA =
             "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-        private const val RSC_STATE_TREE =
-            "%5B%22%22%2C%7B%22children%22%3A%5B%22%5Blang%5D%22%2C%7B%22children%22%3A%5B%22__PAGE__%22%2C%7B%7D%5D%7D%5D%7D%2Cnull%2Cnull%2Ctrue%5D"
     }
 }
