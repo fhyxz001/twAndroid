@@ -56,17 +56,13 @@ jobs:
           retention-days: 7
 
       # ---- Release APK (push) ----
-      - name: Decode Keystore
-        if: github.event_name == 'push'
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/release.keystore
-
       - name: Build Release APK
         if: github.event_name == 'push'
         env:
           KEYSTORE_FILE: ${{ github.workspace }}/release.keystore
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: twdownloader2026
+          KEY_ALIAS: twdownloader
+          KEY_PASSWORD: twdownloader2026
           VERSION_NAME: ${{ steps.version.outputs.name }}
           VERSION_CODE: ${{ steps.version.outputs.code }}
         run: gradle assembleRelease --no-daemon

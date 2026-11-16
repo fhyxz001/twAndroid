@@ -12,4 +12,6 @@
 *.aab
 *.jks
 *.keystore
+# CI 签名密钥（仓库内固定，避免依赖缺失的 Actions Secrets）
+!release.keystore
 /demo/unpackage
